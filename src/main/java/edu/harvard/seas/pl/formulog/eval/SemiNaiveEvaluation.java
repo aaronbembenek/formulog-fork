@@ -260,6 +260,18 @@ public class SemiNaiveEvaluation implements Evaluation {
                 return new PerThreadSmtManager(() -> maybeDoubleCheckSolver(
                         Configuration.smtUseSingleShotSolver ? new SingleShotSolver() : new CallAndResetSolver()));
             }
+            case PER_THREAD_HASH_MATCH: {
+                Runtime.getRuntime().addShutdownHook(new Thread() {
+                  
+                    @Override
+                    public void run() {
+                        System.out.println("[HASH MATCH CACHE HITS] " + HashMatchSmtSolver.getCacheHits());
+                    }
+                    
+                });
+                int size = (int) strategy.getMetadata();
+                return new PerThreadSmtManager(() -> new HashMatchSmtSolver(size, () -> new CheckSatAssumingSolver(), Configuration.smtHashMatchRandProb));
+            }
             default:
                 throw new UnsupportedOperationException("Cannot support SMT strategy: " + strategy);
         }

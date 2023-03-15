@@ -44,6 +44,8 @@ public class SmtStrategy {
 		
 		PER_THREAD_PUSH_POP_NAIVE,
 		
+		PER_THREAD_HASH_MATCH,
+		
 		;
 	}
 

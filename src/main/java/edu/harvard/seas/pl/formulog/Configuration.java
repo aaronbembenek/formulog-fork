@@ -72,6 +72,8 @@ public final class Configuration {
     private static final AtomicInteger smtNumCallsUnknown = new AtomicInteger();
     private static final AtomicInteger smtNumCallsDoubleCheck = new AtomicInteger();
     private static final AtomicInteger smtNumCallsFalseUnknown = new AtomicInteger();
+    
+    public static final double smtHashMatchRandProb = getDoubleProp("smtHashMatchRandProp", 0.1);
 
     // XXX I don't think this is being used any more
     private static final AtomicLong smtTotalTime = new AtomicLong();
@@ -463,6 +465,18 @@ public final class Configuration {
         }
     }
 
+    static double getDoubleProp(String prop, double def) {
+        String val = System.getProperty(prop);
+        if (val == null) {
+            return def;
+        }
+        try {
+            return Double.parseDouble(val);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Property " + prop + " expects a float argument");
+        }
+    }
+
     private static String getStringProp(String prop, String def) {
         String val = System.getProperty(prop);
         if (val == null) {
@@ -538,6 +552,12 @@ public final class Configuration {
         if (m.matches()) {
             int size = Integer.parseInt(m.group(1));
             return new SmtStrategy(SmtStrategy.Tag.PER_THREAD_BEST_MATCH, size);
+        }
+        p = Pattern.compile("perThreadHashMatch-(\\d+)");
+        m = p.matcher(val);
+        if (m.matches()) {
+            int size = Integer.parseInt(m.group(1));
+            return new SmtStrategy(SmtStrategy.Tag.PER_THREAD_HASH_MATCH, size);
         }
         throw new IllegalArgumentException("Unrecognized SMT strategy: " + val);
     }
