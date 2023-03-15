@@ -1,8 +1,10 @@
 package edu.harvard.seas.pl.formulog.smt;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,24 +40,47 @@ public class HashMatchSmtSolver implements SmtLibSolver {
 
     @Override
     public SmtResult check(Collection<SmtLibTerm> asserts, boolean getModel, int timeout) throws EvaluationException {
-        int prefixLength = choosePrefixLength(asserts);
-        var it = asserts.iterator();
-        int key = hash(it, 0, prefixLength);
-        Integer stored = directory.get(key);
+        var hashes = hashValues(asserts);
+        int i;
         double flip = ThreadLocalRandom.current().nextDouble(1.0);
-        int cell; 
-        if (flip < randProb || stored == null) {
+        int cell = 0;
+        if (flip < randProb) {
             cell = ThreadLocalRandom.current().nextInt(solvers.length);
+            i = 0;
         } else {
-            cell = stored;
-            cacheHits.incrementAndGet();
+            i = hashes.size() - 1;
+			for (; i >= 0; --i) {
+			    Integer maybeCell = directory.get(hashes.get(i));
+			    if (maybeCell != null) {
+			        cell = maybeCell;
+			        cacheHits.incrementAndGet();
+			        break;
+			    }
+			}
+			if (i < 0) {
+			    cell = ThreadLocalRandom.current().nextInt(solvers.length);
+			    i = 0;
+			}
         }
-        directory.put(hash(it, key, Integer.MAX_VALUE), cell);
+        for (; i < hashes.size(); ++i) {
+            directory.putIfAbsent(hashes.get(i), cell);
+        }
         return solvers[cell].check(asserts, getModel, timeout);
     }
    
     private int choosePrefixLength(Collection<SmtLibTerm> asserts) {
         return asserts.size() - 1;
+    }
+    
+    private List<Integer> hashValues(Collection<SmtLibTerm> asserts) {
+        List<Integer> l = new ArrayList<>(asserts.size());
+        // Based on boost::hash_combine
+        int seed = 0;
+        for (SmtLibTerm t : asserts) {
+            seed ^= t.hashCode() + 0x9e3779b9 + (seed<<6) + (seed>>2);
+            l.add(seed);
+        }
+        return l;
     }
    
     private int hash(Iterator<SmtLibTerm> it, int seed, int take) {
