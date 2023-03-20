@@ -272,6 +272,9 @@ public class SemiNaiveEvaluation implements Evaluation {
                 int size = (int) strategy.getMetadata();
                 return new PerThreadSmtManager(() -> new HashMatchSmtSolver(size, () -> new CheckSatAssumingSolver(), Configuration.smtHashMatchRandProb));
             }
+            case PER_THREAD_MIXED_CSA: {
+                return new PerThreadSmtManager(() -> new MixedCheckSatAssumingSolver());
+            }
             default:
                 throw new UnsupportedOperationException("Cannot support SMT strategy: " + strategy);
         }

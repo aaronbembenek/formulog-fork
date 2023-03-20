@@ -46,6 +46,8 @@ public class SmtStrategy {
 		
 		PER_THREAD_HASH_MATCH,
 		
+		PER_THREAD_MIXED_CSA,
+		
 		;
 	}
 

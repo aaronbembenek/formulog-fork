@@ -296,7 +296,6 @@ public final class Configuration {
         out.println("[SMT NUM CALLS - UNKNOWN] " + smtNumCallsUnknown);
         out.println("[SMT NUM CALLS - DOUBLE CHECK] " + smtNumCallsDoubleCheck);
         out.println("[SMT NUM CALLS - FALSE UNKNOWN] " + smtNumCallsFalseUnknown);
-        if (csaEvalStats.size() > 0) {
             out.println("--- CSA ---");
             out.printf("[CSA EVAL TIME] %1.1fms%n", csaEvalStats.computeSum() / 1e6);
             out.println("[CSA EVAL TIME PER CALL (ms)] " + csaEvalStats.getStatsString(1e-6));
@@ -307,7 +306,6 @@ public final class Configuration {
             out.println("[CSA CACHE HIT RATE] " + csaCacheHitRate.getStatsString());
             out.println("[CSA CACHE USE RATE] " + csaCacheUseRate.getStatsString());
             out.println("[CSA CACHE CLEARS] " + csaCacheClears.get());
-        }
         if (pushPopEvalStats.size() > 0) {
             out.println("--- PUSH POP ---");
             out.printf("[PUSH POP EVAL TIME] %1.1fms%n", pushPopEvalStats.computeSum() / 1e6);
@@ -527,6 +525,8 @@ public final class Configuration {
                 return new SmtStrategy(SmtStrategy.Tag.PER_THREAD_PUSH_POP, null);
             case "perThreadPushPopNaive":
                 return new SmtStrategy(SmtStrategy.Tag.PER_THREAD_PUSH_POP_NAIVE, null);
+            case "perThreadMixedCsa":
+                return new SmtStrategy(SmtStrategy.Tag.PER_THREAD_MIXED_CSA, null);
         }
 
         Pattern p = Pattern.compile("queue-(\\d+)");
