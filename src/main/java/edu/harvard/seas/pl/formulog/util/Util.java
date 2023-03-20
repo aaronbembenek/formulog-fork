@@ -24,13 +24,16 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
-
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Spliterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -93,6 +96,69 @@ public final class Util {
             m.put(e.getKey(), e.getValue().get());
         }
         return m;
+    }
+    
+    public static class IterableOfSpliterators<T> implements Iterable<Spliterator<T>> {
+
+        private final Collection<T> iterable;
+        private final int size;
+
+        public IterableOfSpliterators(Collection<T> iterable, int size) {
+            this.iterable = iterable;
+            this.size = size;
+        }
+        
+        @Override
+        public Iterator<Spliterator<T>> iterator() {
+            return new IteratorImpl<>(iterable, size);
+        }
+    
+        private static class IteratorImpl<T> implements Iterator<Spliterator<T>> {
+
+            private final int size;
+            private final Deque<Spliterator<T>> stack = new ArrayDeque<>();
+
+            public IteratorImpl(Collection<T> iterable, int size) {
+                var split = iterable.spliterator();
+                if (split != null) {
+                    stack.push(split);
+                } else {
+                    assert iterable.isEmpty(); 
+                }
+                this.size = size;
+            }
+            
+            @Override
+            public boolean hasNext() {
+                return !stack.isEmpty();
+            }
+
+            @Override
+            public Spliterator<T> next() {
+                var split = stack.pop();
+                var mySize = split.estimateSize();
+                while (mySize > size) {
+                    var other = split.trySplit();
+                    if (other == null) {
+                        break;
+                    } else {
+                        stack.push(other);
+                    }
+                    var newSize = split.estimateSize();
+                    if (newSize >= mySize) {
+                        break;
+                    }
+                    mySize = newSize;
+                }
+                return split;
+            }
+            
+        }
+        
+    }
+    
+    public static <T> Iterable<Spliterator<T>> splitIterable2(Collection<T> iterable, int segmentSize) {
+        return new IterableOfSpliterators<>(iterable, segmentSize);
     }
 
     public static class IterableOfIterables<T> implements Iterable<Iterable<T>> {

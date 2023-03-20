@@ -22,6 +22,7 @@ package edu.harvard.seas.pl.formulog.db;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 
 
@@ -64,7 +65,7 @@ public class SortedIndexedFactDb implements IndexedFactDb {
     }
 
     @Override
-    public Iterable<Term[]> getAll(RelationSymbol sym) {
+    public Collection<Term[]> getAll(RelationSymbol sym) {
         return masterIndex.get(sym).fst().getAll();
     }
 
@@ -96,7 +97,7 @@ public class SortedIndexedFactDb implements IndexedFactDb {
     }
 
     @Override
-    public Iterable<Term[]> get(RelationSymbol sym, Term[] key, int index) {
+    public Collection<Term[]> get(RelationSymbol sym, Term[] key, int index) {
         Pair<IndexedFactSet, BindingType[]> p = indices.get(sym)[index];
         return p.fst().lookup(key, p.snd());
     }
@@ -472,7 +473,7 @@ public class SortedIndexedFactDb implements IndexedFactDb {
             return comparatorOrder.size();
         }
 
-        public Iterable<Term[]> getAll() {
+        public Collection<Term[]> getAll() {
             return s;
         }
 
@@ -522,7 +523,7 @@ public class SortedIndexedFactDb implements IndexedFactDb {
             return cnt.get();
         }
 
-        public Iterable<Term[]> lookup(Term[] tup, BindingType[] pat) {
+        public Collection<Term[]> lookup(Term[] tup, BindingType[] pat) {
             Term[] lower = new Term[tup.length];
             Term[] upper = new Term[tup.length];
             for (int i = 0; i < tup.length; ++i) {

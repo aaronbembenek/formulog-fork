@@ -22,8 +22,10 @@ package edu.harvard.seas.pl.formulog.eval;
 
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.Spliterator;
 
 import org.apache.commons.lang3.time.StopWatch;
 
@@ -160,7 +162,32 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 
     }
 
-    Iterable<Iterable<Term[]>> lookup(IndexedRule r, int pos, OverwriteSubstitution s) throws EvaluationException {
+    Iterable<Spliterator<Term[]>> lookup(IndexedRule r, int pos, OverwriteSubstitution s) throws EvaluationException {
+        SimplePredicate predicate = (SimplePredicate) r.getBody(pos);
+        int idx = r.getDbIndex(pos);
+        Term[] args = predicate.getArgs();
+        Term[] key = new Term[args.length];
+        BindingType[] pat = predicate.getBindingPattern();
+        for (int i = 0; i < args.length; ++i) {
+            if (pat[i].isBound()) {
+                key[i] = args[i].normalize(s);
+            } else {
+                key[i] = args[i];
+            }
+        }
+        RelationSymbol sym = predicate.getSymbol();
+        Collection<Term[]> ans;
+        if (sym instanceof DeltaSymbol) {
+            ans = deltaDb.get(((DeltaSymbol) sym).getBaseSymbol(), key, idx);
+        } else {
+            ans = db.get(sym, key, idx);
+        }
+        boolean shouldSplit = splitPositions.get(r)[pos];
+        int targetSize = shouldSplit ? smtTaskSize : taskSize;
+        return Util.splitIterable2(ans, targetSize);
+    }
+   
+    boolean isEmpty(IndexedRule r, int pos, OverwriteSubstitution s) throws EvaluationException {
         SimplePredicate predicate = (SimplePredicate) r.getBody(pos);
         int idx = r.getDbIndex(pos);
         Term[] args = predicate.getArgs();
@@ -180,12 +207,14 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
         } else {
             ans = db.get(sym, key, idx);
         }
-        boolean shouldSplit = splitPositions.get(r)[pos];
-        int targetSize = shouldSplit ? smtTaskSize : taskSize;
-        return Util.splitIterable(ans, targetSize);
+        return !ans.iterator().hasNext();
     }
 
     static final boolean recordRuleDiagnostics = Configuration.recordRuleDiagnostics;
+    
+    static class Box<T> {
+        public T item;
+    }
 
     @SuppressWarnings("serial")
     class RuleSuffixEvaluator extends AbstractFJPTask {
@@ -195,10 +224,10 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
         final SimpleLiteral[] body;
         final int startPos;
         final OverwriteSubstitution s;
-        final Iterator<Iterable<Term[]>> it;
+        final Iterator<Spliterator<Term[]>> it;
 
         protected RuleSuffixEvaluator(IndexedRule rule, SimplePredicate head, SimpleLiteral[] body, int pos,
-                                      OverwriteSubstitution s, Iterator<Iterable<Term[]>> it) {
+                                      OverwriteSubstitution s, Iterator<Spliterator<Term[]>> it) {
             super(exec);
             this.rule = rule;
             this.head = head;
@@ -209,7 +238,7 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
         }
 
         protected RuleSuffixEvaluator(IndexedRule rule, int pos, OverwriteSubstitution s,
-                                      Iterator<Iterable<Term[]>> it) {
+                                      Iterator<Spliterator<Term[]>> it) {
             super(exec);
             this.rule = rule;
             this.head = rule.getHead();
@@ -229,14 +258,12 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
             if (recordRuleDiagnostics) {
                 start = System.currentTimeMillis();
             }
-            Iterable<Term[]> tups = it.next();
+            Spliterator<Term[]> tups = it.next();
             if (it.hasNext()) {
                 exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, head, body, startPos, s.copy(), it));
             }
             try {
-                for (Term[] tup : tups) {
-                    evaluate(tup);
-                }
+                tups.forEachRemaining(this::evaluate);
             } catch (UncheckedEvaluationException e) {
                 throw new EvaluationException(
                         "Exception raised while evaluating the rule: " + rule + "\n\n" + e.getMessage());
@@ -252,8 +279,9 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
             updateBinding(p, ans);
             int pos = startPos + 1;
             @SuppressWarnings("unchecked")
-            Iterator<Term[]>[] stack = new Iterator[rule.getBodySize()];
+            Spliterator<Term[]>[] stack = new Spliterator[rule.getBodySize()];
             boolean movingRight = true;
+            Box<Term[]> tup = new Box<>();
             while (pos > startPos) {
                 if (pos == body.length) {
                     try {
@@ -289,17 +317,17 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
                                 }
                                 break;
                             case PREDICATE:
-                                Iterator<Iterable<Term[]>> tups = lookup(rule, pos, s).iterator();
                                 if (((SimplePredicate) l).isNegated()) {
-                                    if (!tups.hasNext()) {
+                                    if (isEmpty(rule, pos, s)) {
                                         pos++;
                                     } else {
                                         pos--;
                                         movingRight = false;
                                     }
                                 } else {
+                                    Iterator<Spliterator<Term[]>> tups = lookup(rule, pos, s).iterator();
                                     if (tups.hasNext()) {
-                                        stack[pos] = tups.next().iterator();
+                                        stack[pos] = tups.next();
                                         if (tups.hasNext()) {
                                             exec.recursivelyAddTask(
                                                     new RuleSuffixEvaluator(rule, head, body, pos, s.copy(), tups));
@@ -317,12 +345,19 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
                                 "Exception raised while evaluating the literal: " + l + "\n\n" + e.getMessage());
                     }
                 } else {
-                    Iterator<Term[]> it = stack[pos];
-                    if (it != null && it.hasNext()) {
-                        ans = it.next();
-                        updateBinding((SimplePredicate) rule.getBody(pos), ans);
-                        movingRight = true;
-                        pos++;
+                    Spliterator<Term[]> it = stack[pos];
+                    if (it != null) {
+                        tup.item = null;
+                        it.tryAdvance(t -> tup.item = t);
+                        if (tup.item == null) {
+                            stack[pos] = null;
+                            pos--;
+                        } else {
+                            ans = tup.item;
+                            updateBinding((SimplePredicate) rule.getBody(pos), ans);
+                            movingRight = true;
+                            pos++;
+                        }
                     } else {
                         stack[pos] = null;
                         pos--;
@@ -399,7 +434,7 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
                         case PREDICATE:
                             SimplePredicate p = (SimplePredicate) l;
                             if (p.isNegated()) {
-                                if (lookup(rule, pos, s).iterator().hasNext()) {
+                                if (!isEmpty(rule, pos, s)) {
                                     return;
                                 }
                             } else {
@@ -423,7 +458,7 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
                             + e.getLocalizedMessage());
                 }
             }
-            Iterator<Iterable<Term[]>> tups = lookup(rule, pos, s).iterator();
+            Iterator<Spliterator<Term[]>> tups = lookup(rule, pos, s).iterator();
             if (tups.hasNext()) {
                 exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, pos, s, tups));
             }
