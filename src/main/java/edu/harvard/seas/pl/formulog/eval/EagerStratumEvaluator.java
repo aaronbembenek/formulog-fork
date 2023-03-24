@@ -50,7 +50,7 @@ public final class EagerStratumEvaluator extends AbstractStratumEvaluator {
 	final Set<RelationSymbol> trackedRelations;
 
 	static final int taskSize = Configuration.taskSize;
-	static final int smtTaskSize = 1;
+	static final int smtTaskSize = Configuration.smtTaskSize;
 
 	public EagerStratumEvaluator(int stratumNum, SortedIndexedFactDb db, Iterable<IndexedRule> rules, CountingFJP exec,
 			Set<RelationSymbol> trackedRelations) {
