@@ -48,7 +48,7 @@ import edu.harvard.seas.pl.formulog.validating.ast.Destructor;
 import edu.harvard.seas.pl.formulog.validating.ast.SimpleLiteral;
 import edu.harvard.seas.pl.formulog.validating.ast.SimplePredicate;
 
-public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator {
+public final class LocallyBatchedEagerStratumEvaluator extends AbstractStratumEvaluator {
 
 	final int stratumNum;
 	final SortedIndexedFactDb db;
@@ -60,7 +60,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 	static final int smtTaskSize = Configuration.smtTaskSize;
 	static final int maxGen = Configuration.eagerEvalMaxGen;
 
-	public BatchedEagerStratumEvaluator(int stratumNum, SortedIndexedFactDb db, Iterable<IndexedRule> rules,
+	public LocallyBatchedEagerStratumEvaluator(int stratumNum, SortedIndexedFactDb db, Iterable<IndexedRule> rules,
 			CountingFJP exec, Set<RelationSymbol> trackedRelations) {
 		super(rules);
 		this.stratumNum = stratumNum;

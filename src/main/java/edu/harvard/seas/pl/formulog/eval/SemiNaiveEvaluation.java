@@ -508,7 +508,13 @@ public class SemiNaiveEvaluation implements Evaluation {
 		}
 		if (eagerEval) {
 			if (Configuration.eagerEvalBatchSize > 1) {
-				new BatchedEagerStratumEvaluator(stratum.getRank(), db, l, exec, trackedRelations).evaluate();
+				if (Configuration.eagerEvalGlobalBatching) {
+					new GloballyBatchedEagerStratumEvaluator(stratum.getRank(), db, l, exec, trackedRelations)
+							.evaluate();
+				} else {
+					new LocallyBatchedEagerStratumEvaluator(stratum.getRank(), db, l, exec, trackedRelations)
+							.evaluate();
+				}
 			} else {
 				new EagerStratumEvaluator(stratum.getRank(), db, l, exec, trackedRelations).evaluate();
 			}
