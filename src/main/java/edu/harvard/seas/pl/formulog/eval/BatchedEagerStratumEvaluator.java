@@ -2,6 +2,7 @@ package edu.harvard.seas.pl.formulog.eval;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 
 /*-
  * #%L
@@ -25,6 +26,7 @@ import java.util.Collections;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import edu.harvard.seas.pl.formulog.Configuration;
@@ -52,9 +54,11 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 	final SortedIndexedFactDb db;
 	final CountingFJP exec;
 	final Set<RelationSymbol> trackedRelations;
+	Map<RelationSymbol, Set<Term[]>> deltaSets;
 
 	static final int taskSize = Configuration.taskSize;
 	static final int smtTaskSize = Configuration.smtTaskSize;
+	static final int maxGen = Configuration.eagerEvalMaxGen;
 
 	public BatchedEagerStratumEvaluator(int stratumNum, SortedIndexedFactDb db, Iterable<IndexedRule> rules,
 			CountingFJP exec, Set<RelationSymbol> trackedRelations) {
@@ -65,41 +69,47 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 		this.trackedRelations = trackedRelations;
 	}
 
+	private Map<RelationSymbol, Set<Term[]>> resetDeltaSets() {
+		var r = deltaSets;
+		deltaSets = new HashMap<>();
+		for (RelationSymbol sym : laterRoundRules.keySet()) {
+			deltaSets.put(sym, Util.concurrentSet());
+		}
+		return r;
+	}
+
 	@Override
 	public void evaluate() throws EvaluationException {
+		resetDeltaSets();
 		for (IndexedRule r : firstRoundRules) {
-			exec.externallyAddTask(new RulePrefixEvaluator(r, null));
+			exec.externallyAddTask(new RulePrefixEvaluator(r, null, 0));
 		}
 		exec.blockUntilFinished();
 		if (exec.hasFailed()) {
 			throw exec.getFailureCause();
 		}
-	}
-
-	void reportFact(RelationSymbol sym, Term[] args, Substitution s) throws EvaluationException {
-		Term[] newArgs = new Term[args.length];
-		for (int i = 0; i < args.length; ++i) {
-			newArgs[i] = args[i].normalize(s);
-		}
-		if (db.add(sym, newArgs)) {
-			Set<IndexedRule> rs = laterRoundRules.get(sym);
-			if (rs != null) {
-				for (IndexedRule r : rs) {
-					exec.recursivelyAddTask(new RulePrefixEvaluator(r, Collections.singletonList(newArgs)));
+		while (true) {
+			boolean didSomething = false;
+			for (var e : resetDeltaSets().entrySet()) {
+				var s = e.getValue();
+				if (!s.isEmpty()) {
+					for (var r : laterRoundRules.get(e.getKey())) {
+						exec.externallyAddTask(new RulePrefixEvaluator(r, s, 0));
+						didSomething = true;
+					}
 				}
 			}
-			if (trackedRelations.contains(sym)) {
-				System.err.println("[TRACKED] " + UserPredicate.make(sym, newArgs, false));
+			exec.blockUntilFinished();
+			if (exec.hasFailed()) {
+				throw exec.getFailureCause();
 			}
-			if (Configuration.recordWork) {
-				Configuration.newDerivs.incrementAndGet();
+			if (!didSomething) {
+				break;
 			}
-		} else if (Configuration.recordWork) {
-			Configuration.dupDerivs.incrementAndGet();
 		}
 	}
 
-	Iterable<Iterable<Term[]>> lookup(IndexedRule r, int pos, OverwriteSubstitution s) throws EvaluationException {
+	Iterator<Iterable<Term[]>> lookup(IndexedRule r, int pos, OverwriteSubstitution s) throws EvaluationException {
 		SimplePredicate predicate = (SimplePredicate) r.getBody(pos);
 		int idx = r.getDbIndex(pos);
 		Term[] args = predicate.getArgs();
@@ -117,7 +127,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 		Iterable<Term[]> ans = db.get(sym, key, idx);
 		boolean shouldSplit = splitPositions.get(r)[pos];
 		int targetSize = shouldSplit ? smtTaskSize : taskSize;
-		return Util.splitIterable(ans, targetSize);
+		return Util.splitIterable(ans, targetSize).iterator();
 	}
 
 	static final boolean recordRuleDiagnostics = Configuration.recordRuleDiagnostics;
@@ -132,10 +142,12 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 		final int startPos;
 		final OverwriteSubstitution s;
 		final Iterator<Iterable<Term[]>> it;
+		final boolean recursivePred;
 		final List<Term[]> batch = new ArrayList<>(batchSize);
+		final int gen;
 
 		protected RuleSuffixEvaluator(IndexedRule rule, SimplePredicate head, SimpleLiteral[] body, int pos,
-				OverwriteSubstitution s, Iterator<Iterable<Term[]>> it) {
+				OverwriteSubstitution s, Iterator<Iterable<Term[]>> it, int gen) {
 			super(exec);
 			this.rule = rule;
 			this.head = head;
@@ -143,13 +155,15 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 			this.startPos = pos;
 			this.s = s;
 			this.it = it;
+			this.gen = gen;
+			recursivePred = laterRoundRules.containsKey(head.getSymbol());
 			if (Configuration.recordWork) {
 				Configuration.workItems.incrementAndGet();
 			}
 		}
 
-		protected RuleSuffixEvaluator(IndexedRule rule, int pos, OverwriteSubstitution s,
-				Iterator<Iterable<Term[]>> it) {
+		protected RuleSuffixEvaluator(IndexedRule rule, int pos, OverwriteSubstitution s, Iterator<Iterable<Term[]>> it,
+				int gen) {
 			super(exec);
 			this.rule = rule;
 			this.head = rule.getHead();
@@ -161,6 +175,8 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 			this.startPos = pos;
 			this.s = s;
 			this.it = it;
+			this.gen = gen;
+			recursivePred = laterRoundRules.containsKey(head.getSymbol());
 			if (Configuration.recordWork) {
 				Configuration.workItems.incrementAndGet();
 			}
@@ -174,7 +190,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 			}
 			Iterable<Term[]> tups = it.next();
 			if (it.hasNext()) {
-				exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, head, body, startPos, s.copy(), it));
+				exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, head, body, startPos, s.copy(), it, gen));
 			}
 			try {
 				for (Term[] tup : tups) {
@@ -232,7 +248,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 							}
 							break;
 						case PREDICATE:
-							Iterator<Iterable<Term[]>> tups = lookup(rule, pos, s).iterator();
+							Iterator<Iterable<Term[]>> tups = lookup(rule, pos, s);
 							if (((SimplePredicate) l).isNegated()) {
 								if (!tups.hasNext()) {
 									pos++;
@@ -245,7 +261,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 									stack[pos] = tups.next().iterator();
 									if (tups.hasNext()) {
 										exec.recursivelyAddTask(
-												new RuleSuffixEvaluator(rule, head, body, pos, s.copy(), tups));
+												new RuleSuffixEvaluator(rule, head, body, pos, s.copy(), tups, gen));
 									}
 									// No need to do anything else: we'll hit the right case on the next iteration.
 								} else {
@@ -287,7 +303,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 				}
 			}
 		}
-		
+
 		void reportFactBatched(RelationSymbol sym, Term[] args, Substitution s) throws EvaluationException {
 			Term[] newArgs = new Term[args.length];
 			for (int i = 0; i < args.length; ++i) {
@@ -300,24 +316,28 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 				if (Configuration.recordWork) {
 					Configuration.newDerivs.incrementAndGet();
 				}
-				batch.add(newArgs);
-				if (batch.size() >= batchSize) {
-					dispatchBatch();
+				if (recursivePred) {
+					if (gen < maxGen) {
+						batch.add(newArgs);
+						if (batch.size() >= batchSize) {
+							dispatchBatch();
+						}
+					} else {
+						deltaSets.get(sym).add(newArgs);
+					}
 				}
 			} else if (Configuration.recordWork) {
 				Configuration.dupDerivs.incrementAndGet();
 			}
 		}
-		
+
 		void dispatchBatch() {
 			if (!batch.isEmpty()) {
+				var copy = new ArrayList<>(batch);
+				batch.clear();
 				Set<IndexedRule> rs = laterRoundRules.get(head.getSymbol());
-				if (rs != null) {
-					var copy = new ArrayList<>(batch);
-					batch.clear();
-					for (IndexedRule r : rs) {
-						exec.recursivelyAddTask(new RulePrefixEvaluator(r, copy));
-					}
+				for (IndexedRule r : rs) {
+					exec.recursivelyAddTask(new RulePrefixEvaluator(r, copy, gen + 1));
 				}
 			}
 		}
@@ -328,14 +348,44 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 	class RulePrefixEvaluator extends AbstractFJPTask {
 
 		final IndexedRule rule;
-		final List<Term[]> deltaTups;
+		final Iterable<Term[]> deltaTups;
+		final int gen;
 
-		protected RulePrefixEvaluator(IndexedRule rule, List<Term[]> deltaArgs) {
+		protected RulePrefixEvaluator(IndexedRule rule, Iterable<Term[]> deltaArgs, int gen) {
 			super(exec);
 			this.rule = rule;
 			this.deltaTups = deltaArgs;
+			this.gen = gen;
 			if (Configuration.recordWork) {
 				Configuration.workItems.incrementAndGet();
+			}
+		}
+
+		void reportFact(RelationSymbol sym, Term[] args, Substitution s) throws EvaluationException {
+			Term[] newArgs = new Term[args.length];
+			for (int i = 0; i < args.length; ++i) {
+				newArgs[i] = args[i].normalize(s);
+			}
+			if (db.add(sym, newArgs)) {
+				boolean recursivePred = laterRoundRules.containsKey(sym);
+				if (recursivePred) {
+					if (gen < maxGen) {
+						for (IndexedRule r : laterRoundRules.get(sym)) {
+							exec.recursivelyAddTask(
+									new RulePrefixEvaluator(r, Collections.singletonList(newArgs), gen + 1));
+						}
+					} else {
+						deltaSets.get(sym).add(newArgs);
+					}
+				}
+				if (trackedRelations.contains(sym)) {
+					System.err.println("[TRACKED] " + UserPredicate.make(sym, newArgs, false));
+				}
+				if (Configuration.recordWork) {
+					Configuration.newDerivs.incrementAndGet();
+				}
+			} else if (Configuration.recordWork) {
+				Configuration.dupDerivs.incrementAndGet();
 			}
 		}
 
@@ -358,7 +408,9 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 				}
 				l.add(deltaTup);
 			}
-			return Collections.singletonList((Iterable<Term[]>) l).iterator();
+			boolean shouldSplit = splitPositions.get(rule)[pos];
+			int targetSize = shouldSplit ? smtTaskSize : taskSize;
+			return Util.splitIterable(l, targetSize).iterator();
 		}
 
 		@Override
@@ -404,7 +456,7 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 					case PREDICATE:
 						SimplePredicate p = (SimplePredicate) l;
 						if (p.isNegated()) {
-							if (lookup(rule, pos, s).iterator().hasNext()) {
+							if (lookup(rule, pos, s).hasNext()) {
 								return;
 							}
 						} else {
@@ -433,10 +485,10 @@ public final class BatchedEagerStratumEvaluator extends AbstractStratumEvaluator
 			if (foundDelta) {
 				tups = handleDelta(pos, s);
 			} else {
-				tups = lookup(rule, pos, s).iterator();
+				tups = lookup(rule, pos, s);
 			}
 			if (tups.hasNext()) {
-				exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, pos, s, tups));
+				exec.recursivelyAddTask(new RuleSuffixEvaluator(rule, pos, s, tups, gen));
 			}
 		}
 	}

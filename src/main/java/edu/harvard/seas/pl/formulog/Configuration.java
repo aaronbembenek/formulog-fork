@@ -169,6 +169,7 @@ public final class Configuration {
 
 	public static final boolean eagerSemiNaive = propIsSet("eagerSemiNaive");
 	public static final int eagerEvalBatchSize = getIntProp("eagerEvalBatchSize", 1);
+	public static final int eagerEvalMaxGen = getIntProp("eagerEvalMaxGen", Integer.MAX_VALUE);
 
 	public static final boolean useHashDbFilter = propIsSet("useHashDbFilter", true);
 
