@@ -27,7 +27,6 @@ import edu.harvard.seas.pl.formulog.symbols.FunctionSymbol;
 import edu.harvard.seas.pl.formulog.symbols.RelationSymbol;
 import edu.harvard.seas.pl.formulog.util.Dataset;
 import edu.harvard.seas.pl.formulog.util.Pair;
-import edu.harvard.seas.pl.formulog.util.SharedLong;
 import edu.harvard.seas.pl.formulog.util.Util;
 
 import java.io.PrintStream;
@@ -36,6 +35,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -173,13 +173,13 @@ public final class Configuration {
 	public static final boolean useHashDbFilter = propIsSet("useHashDbFilter", true);
 
 	public static final boolean recordWork = propIsSet("recordWork");
-	public static final SharedLong work = new SharedLong();
-	public static final SharedLong workItems = new SharedLong();
-	public static final SharedLong newDerivs = new SharedLong();
-	public static final SharedLong dupDerivs = new SharedLong();
+	public static final LongAdder work = new LongAdder();
+	public static final LongAdder workItems = new LongAdder();
+	public static final LongAdder newDerivs = new LongAdder();
+	public static final LongAdder dupDerivs = new LongAdder();
 
-	public static final SharedLong smtCalls = new SharedLong();
-	public static final SharedLong smtTime = new SharedLong();
+	public static final LongAdder smtCalls = new LongAdder();
+	public static final LongAdder smtTime = new LongAdder();
 
 	static {
 		if (recordFuncDiagnostics) {
