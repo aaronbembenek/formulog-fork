@@ -106,24 +106,6 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 		}
 	}
 
-	void reportFact(RelationSymbol sym, Term[] args, Substitution s) throws EvaluationException {
-		Term[] newArgs = new Term[args.length];
-		for (int i = 0; i < args.length; ++i) {
-			newArgs[i] = args[i].normalize(s);
-		}
-		if (!db.hasFact(sym, newArgs) && nextDeltaDb.add(sym, newArgs)) {
-			changed = true;
-			if (trackedRelations.contains(sym)) {
-				System.err.println("[TRACKED] " + UserPredicate.make(sym, newArgs, false));
-			}
-			if (Configuration.recordWork) {
-				Configuration.newDerivs.increment();
-			}
-		} else if (Configuration.recordWork) {
-			Configuration.dupDerivs.increment();
-		}
-	}
-
 	void updateDbs() {
 		StopWatch watch = recordDbUpdateStart();
 		for (RelationSymbol sym : nextDeltaDb.getSymbols()) {
@@ -192,7 +174,38 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 	static final boolean recordRuleDiagnostics = Configuration.recordRuleDiagnostics;
 
 	@SuppressWarnings("serial")
-	class RuleSuffixEvaluator extends AbstractFJPTask {
+	abstract class AbstractRuleEvaluator extends AbstractFJPTask {
+
+		protected AbstractRuleEvaluator(CountingFJP exec, int arity) {
+			super(exec);
+			tup = new Term[arity];
+		}
+		
+		private Term[] tup;
+		
+		void reportFact(RelationSymbol sym, Term[] args, Substitution s) throws EvaluationException {
+			var newArgs = tup;
+			for (int i = 0; i < args.length; ++i) {
+				newArgs[i] = args[i].normalize(s);
+			}
+			if (!db.hasFact(sym, newArgs) && nextDeltaDb.add(sym, newArgs)) {
+				changed = true;
+				if (trackedRelations.contains(sym)) {
+					System.err.println("[TRACKED] " + UserPredicate.make(sym, newArgs, false));
+				}
+				if (Configuration.recordWork) {
+					Configuration.newDerivs.increment();
+				}
+				tup = new Term[args.length];
+			} else if (Configuration.recordWork) {
+				Configuration.dupDerivs.increment();
+			}
+		}
+		
+	}
+	
+	@SuppressWarnings("serial")
+	class RuleSuffixEvaluator extends AbstractRuleEvaluator {
 
 		final IndexedRule rule;
 		final SimplePredicate head;
@@ -200,24 +213,28 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 		final int startPos;
 		final OverwriteSubstitution s;
 		final Iterator<Iterable<Term[]>> it;
+		final Iterator<Term[]>[] stack;
 
+		@SuppressWarnings("unchecked")
 		protected RuleSuffixEvaluator(IndexedRule rule, SimplePredicate head, SimpleLiteral[] body, int pos,
 				OverwriteSubstitution s, Iterator<Iterable<Term[]>> it) {
-			super(exec);
+			super(exec, head.getSymbol().getArity());
 			this.rule = rule;
 			this.head = head;
 			this.body = body;
 			this.startPos = pos;
 			this.s = s;
 			this.it = it;
+			stack = new Iterator[rule.getBodySize()];
 			if (Configuration.recordWork) {
 				Configuration.workItems.increment();
 			}
 		}
 
+		@SuppressWarnings("unchecked")
 		protected RuleSuffixEvaluator(IndexedRule rule, int pos, OverwriteSubstitution s,
 				Iterator<Iterable<Term[]>> it) {
-			super(exec);
+			super(exec, rule.getHead().getSymbol().getArity());
 			this.rule = rule;
 			this.head = rule.getHead();
 			SimpleLiteral[] bd = new SimpleLiteral[rule.getBodySize()];
@@ -228,6 +245,7 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 			this.startPos = pos;
 			this.s = s;
 			this.it = it;
+			stack = new Iterator[rule.getBodySize()];
 			if (Configuration.recordWork) {
 				Configuration.workItems.increment();
 			}
@@ -261,8 +279,6 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 			SimplePredicate p = (SimplePredicate) body[startPos];
 			updateBinding(p, ans);
 			int pos = startPos + 1;
-			@SuppressWarnings("unchecked")
-			Iterator<Term[]>[] stack = new Iterator[rule.getBodySize()];
 			boolean movingRight = true;
 			while (pos > startPos) {
 				if (pos == body.length) {
@@ -357,12 +373,12 @@ public final class RoundBasedStratumEvaluator extends AbstractStratumEvaluator {
 	}
 
 	@SuppressWarnings("serial")
-	class RulePrefixEvaluator extends AbstractFJPTask {
+	class RulePrefixEvaluator extends AbstractRuleEvaluator {
 
 		final IndexedRule rule;
 
 		protected RulePrefixEvaluator(IndexedRule rule) {
-			super(exec);
+			super(exec, rule.getHead().getSymbol().getArity());
 			this.rule = rule;
 			if (Configuration.recordWork) {
 				Configuration.workItems.increment();
