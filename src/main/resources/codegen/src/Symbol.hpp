@@ -44,11 +44,8 @@ constexpr size_t symbol_arity(Symbol sym) {
     switch (sym) {
 /* INSERT 1 */
         default:
-            abort();
+            return 0;
     }
-#ifdef FLG_DEV
-    return 0;
-#endif
 }
 
 } // namespace flg

@@ -204,30 +204,78 @@ struct ComplexTermHash {
 
 // Concurrency-safe cache for ComplexTerm values
 template <Symbol S> class ComplexTermCache {
-  inline static constexpr size_t arity = symbol_arity(S);
-  typedef concurrent_unordered_map<
-    array<term_ptr, arity>, term_ptr, ComplexTermHash<arity>> map_t;
-  inline static map_t cache;
+    typedef const ComplexTerm *entry_t;
 
-  public:
-  template <typename... T,
+    inline static constexpr size_t arity = symbol_arity(S);
+
+    struct Compare {
+        int operator()(const entry_t &v1, const entry_t &v2) const {
+            for (std::size_t i = 0; i < arity; ++i) {
+                auto a = v1->val[i];
+                auto b = v2->val[i];
+                if (std::less<>()(a, b)) {
+                    return -1;
+                }
+                if (std::less<>()(b, a)) {
+                    return 1;
+                }
+            }
+            return 0;
+        }
+
+        [[nodiscard]] bool less(const entry_t &v1, const entry_t &v2) const {
+            return (*this)(v1, v2) < 0;
+        }
+
+        [[nodiscard]] bool equal(const entry_t &v1, const entry_t &v2) const {
+            return (*this)(v1, v2) == 0;
+        }
+    };
+
+    typedef souffle::btree_set<entry_t, Compare> map_t;
+    inline static map_t cache;
+
+public:
+    template<typename... T,
             typename = enable_if_t<sizeof...(T) == arity>>
-  static term_ptr get(T... val) {
-      array<term_ptr, arity> arr = {val...};
-      auto it = cache.find(arr);
-      if (it != cache.end()) {
-          return it->second;
-      }
-      auto *heap_arr = new term_ptr[arity]{val...};
-      auto ptr = new ComplexTerm(S, arity, heap_arr);
-      auto result = cache.emplace(arr, ptr);
-      if (!result.second) {
-          // Term was not successfully inserted
-          delete ptr;
-      }
-      return result.first->second;
-  }
+    static term_ptr get(T... val) {
+        auto *heap_arr = new term_ptr[arity]{val...};
+        auto ptr = new ComplexTerm(S, arity, heap_arr);
+        typename map_t::operation_hints hints;
+        auto other = cache.insertIfAbsent(ptr, hints);
+        if (other) {
+            delete ptr;
+            return other.value();
+        }
+        return ptr;
+    }
 };
+
+//template <Symbol S> class ComplexTermCache {
+//    inline static constexpr size_t arity = symbol_arity(S);
+//    typedef concurrent_unordered_map<
+//            array<term_ptr, arity>, term_ptr, ComplexTermHash<arity>> map_t;
+//    inline static map_t cache;
+//
+//public:
+//    template <typename... T,
+//            typename = enable_if_t<sizeof...(T) == arity>>
+//    static term_ptr get(T... val) {
+//        array<term_ptr, arity> arr = {val...};
+//        auto it = cache.find(arr);
+//        if (it != cache.end()) {
+//            return it->second;
+//        }
+//        auto *heap_arr = new term_ptr[arity]{val...};
+//        auto ptr = new ComplexTerm(S, arity, heap_arr);
+//        auto result = cache.emplace(arr, ptr);
+//        if (!result.second) {
+//            // Term was not successfully inserted
+//            delete ptr;
+//        }
+//        return result.first->second;
+//    }
+//};
 
 template<Symbol S, typename... T>
 term_ptr Term::make(T... val) {
