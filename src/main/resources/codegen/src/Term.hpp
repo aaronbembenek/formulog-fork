@@ -7,6 +7,7 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <souffle/SouffleInterface.h>
+#include <souffle/datastructure/BTree.h>
 #include <tbb/concurrent_unordered_map.h>
 
 #include "set.hpp"
@@ -98,9 +99,12 @@ protected:
     Term(Symbol sym_) : sym{sym_} {}
 
 private:
-    inline static concurrent_unordered_map<souffle::RamDomain, term_ptr> int_term_map;
-    inline static concurrent_unordered_map<term_ptr, souffle::RamDomain> term_int_map;
-    inline static std::atomic<souffle::RamDomain> int_cnt{0};
+    //inline static concurrent_unordered_map<souffle::RamDomain, term_ptr> int_term_map;
+    //inline static concurrent_unordered_map<term_ptr, souffle::RamDomain> term_int_map;
+    //inline static std::atomic<souffle::RamDomain> int_cnt{0};
+
+    static const BaseTerm<int32_t> i32_memo[201];
+    static const BaseTerm<int64_t> i64_memo[201];
 };
 
 struct ComplexTerm : public Term {
@@ -134,8 +138,8 @@ struct BaseTerm : public Term {
 private:
     BaseTerm(Symbol sym_, T &&val_) : Term{sym_}, val{std::move(val_)} {}
 
-    template<typename, Symbol> friend
-    class BaseTermCache;
+    template<typename, Symbol> friend class BaseTermCache;
+    friend struct Term;
 };
 
 ostream &operator<<(ostream &out, const Term &t);
@@ -155,53 +159,95 @@ inline const term_ptr max_term =
 // Concurrency-safe cache for BaseTerm values
 template<typename T, Symbol S>
 class BaseTermCache {
-    struct Hash {
-        std::size_t operator()(const T *const &val) const {
-            return boost::hash<T>{}(*val);
+    typedef const BaseTerm<T> *entry_t;
+
+    struct Compare {
+        int operator()(const entry_t &v1, const entry_t &v2) const {
+            return (v1->val > v2->val) - (v1->val < v2->val);
+        }
+
+        bool less(const entry_t &v1, const entry_t &v2) const {
+            return v1->val < v2->val;
+        }
+
+        bool equal(const entry_t &v1, const entry_t &v2) const {
+            return v1->val == v2->val;
         }
     };
 
-    struct Equals {
-        bool operator()(const T *const &val1, const T *const &val2) const {
-            return *val1 == *val2;
-        }
-    };
-
-    typedef concurrent_unordered_map<const T*, term_ptr, Hash, Equals> map_t;
+    typedef souffle::btree_set<entry_t, Compare> map_t;
     inline static map_t cache;
 
 public:
     static term_ptr get(T &&val) {
-        auto it = cache.find(&val);
-        if (it != cache.end()) {
-            return it->second;
-        }
         auto ptr = new BaseTerm<T>(S, std::move(val));
-        auto result = cache.emplace(&ptr->val, ptr);
-        if (!result.second) {
-            // Term was not successfully inserted
+        typename map_t::operation_hints hints;
+        auto other = cache.insertIfAbsent(ptr, hints);
+        if (other) {
             delete ptr;
+            return other.value();
         }
-        return result.first->second;
+        return ptr;
     }
 };
 
+//template<typename T, Symbol S>
+//class BaseTermCache {
+//    struct Hash {
+//        std::size_t operator()(const T *const &val) const {
+//            return boost::hash<T>{}(*val);
+//        }
+//    };
+//
+//    struct Equals {
+//        bool operator()(const T *const &val1, const T *const &val2) const {
+//            return *val1 == *val2;
+//        }
+//    };
+//
+//    typedef concurrent_unordered_map<const T*, term_ptr, Hash, Equals> map_t;
+//    inline static map_t cache;
+//
+//public:
+//    static term_ptr get(T &&val) {
+//        auto it = cache.find(&val);
+//        if (it != cache.end()) {
+//            return it->second;
+//        }
+//        auto ptr = new BaseTerm<T>(S, std::move(val));
+//        auto result = cache.emplace(&ptr->val, ptr);
+//        if (!result.second) {
+//            // Term was not successfully inserted
+//            delete ptr;
+//        }
+//        return result.first->second;
+//    }
+//};
+
 template<>
 inline term_ptr Term::make<bool>(bool val) {
-    typedef BaseTermCache<bool, Symbol::boxed_bool> cache;
+    //typedef BaseTermCache<bool, Symbol::boxed_bool> cache;
     // Optimization to avoid unnecessary lock contention
-    static const term_ptr true_term = cache::get(true);
-    static const term_ptr false_term = cache::get(false);
-    return val ? true_term : false_term;
+    //static const term_ptr true_term = cache::get(true);
+    //static const term_ptr false_term = cache::get(false);
+    static const BaseTerm<bool> true_term(Symbol::boxed_bool, true);
+    static const BaseTerm<bool> false_term(Symbol::boxed_bool, false);
+    return val ? &true_term : &false_term;
 }
 
 template<>
 inline term_ptr Term::make<int32_t>(int32_t val) {
+    if (val >= -100 && val <= 100) {
+        return &i32_memo[val + 100];
+    }
     return BaseTermCache<int32_t, Symbol::boxed_i32>::get(std::move(val));
 }
 
 template<>
 inline term_ptr Term::make<int64_t>(int64_t val) {
+    if (val >= -100 && val <= 100) {
+        return &i64_memo[val + 100];
+    }
     return BaseTermCache<int64_t, Symbol::boxed_i64>::get(std::move(val));
 }
 
@@ -209,9 +255,9 @@ template<>
 inline term_ptr Term::make<float>(float val) {
     typedef BaseTermCache<float, Symbol::boxed_fp32> cache;
     // NaN is a special case due to ill-behaved floating point comparison
-    static const term_ptr nan32_term = cache::get(nanf(""));
+    static const BaseTerm<float> nan32_term(Symbol::boxed_fp32, nanf(""));
     if (isnan(val)) {
-        return nan32_term;
+        return &nan32_term;
     }
     return cache::get(std::move(val));
 }
@@ -220,9 +266,9 @@ template<>
 inline term_ptr Term::make<double>(double val) {
     typedef BaseTermCache<double, Symbol::boxed_fp64> cache;
     // NaN is a special case due to ill-behaved floating point comparison
-    static const term_ptr nan64_term = cache::get(nan(""));
+    static const BaseTerm<double> nan64_term(Symbol::boxed_fp64, nan(""));
     if (isnan(val)) {
-        return nan64_term;
+        return &nan64_term;
     }
     return cache::get(std::move(val));
 }
