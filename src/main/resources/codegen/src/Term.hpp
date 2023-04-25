@@ -166,11 +166,11 @@ class BaseTermCache {
             return (v1->val > v2->val) - (v1->val < v2->val);
         }
 
-        bool less(const entry_t &v1, const entry_t &v2) const {
+        [[nodiscard]] bool less(const entry_t &v1, const entry_t &v2) const {
             return v1->val < v2->val;
         }
 
-        bool equal(const entry_t &v1, const entry_t &v2) const {
+        [[nodiscard]] bool equal(const entry_t &v1, const entry_t &v2) const {
             return v1->val == v2->val;
         }
     };
