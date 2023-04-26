@@ -35,6 +35,9 @@ class BaseTermCache;
 template<Symbol S>
 class ComplexTermCache;
 
+template<std::size_t arity>
+using TermArrayMap = ConcurrentHashMap<std::array<term_ptr, arity>, term_ptr, boost::hash<std::array<term_ptr, arity>>>;
+
 struct Term {
     const Symbol sym;
 

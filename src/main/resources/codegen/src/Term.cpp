@@ -205,8 +205,7 @@ struct ComplexTermHash {
 // Concurrency-safe cache for ComplexTerm values
 template <Symbol S> class ComplexTermCache {
   inline static constexpr size_t arity = symbol_arity(S);
-  typedef ConcurrentHashMap<
-          array<term_ptr, arity>, term_ptr, ComplexTermHash<arity>> map_t;
+  typedef TermArrayMap<arity> map_t;
   inline static map_t cache;
 
   public:
