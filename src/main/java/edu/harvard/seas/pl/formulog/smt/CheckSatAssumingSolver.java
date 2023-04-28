@@ -51,7 +51,7 @@ public class CheckSatAssumingSolver extends AbstractSmtLibSolver {
 
 	private void clearCache() throws EvaluationException {
 		if (Configuration.timeSmt) {
-			Configuration.recordCsaCacheClear(solverId);
+			Configuration.recordCsaCacheClear(this);
 		}
 		indicatorVars.clear();
 		nextVarId = 0;

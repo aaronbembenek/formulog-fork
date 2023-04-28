@@ -1,6 +1,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <numeric>
 #include <vector>
 #include <string>
 
@@ -172,11 +173,57 @@ std::ostream &operator<<(std::ostream &os, const std::vector<std::string> &vec) 
 }
 
 void printSmtStats() {
+    using globals::time_t;
+    std::stringstream ss;
+    unsigned i = 0;
+    unsigned num = 0;
+    time_t time = time_t::zero();
+    unsigned cache_clears = 0;
+
+    globals::smt_data.combine_each([&](const globals::SmtStats &stats) {
+        cache_clears += stats.smt_cache_clears;
+        unsigned num_local = stats.smt_calls.size();
+        num += num_local;
+        assert(num_local);
+
+        std::vector<globals::time_t> calls = stats.smt_calls;
+        time_t solver_time = std::accumulate(calls.begin(), calls.end(), time_t::zero());
+        time += solver_time;
+
+        time_t mean = solver_time / num_local;
+        auto variance_func = [&mean](double accumulator, const time_t &val) {
+            auto delta = (val - mean).count();
+            return accumulator + delta * delta;
+        };
+        double variance = std::accumulate(calls.begin(), calls.end(), 0.0, variance_func) / num_local;
+        auto stddev = std::sqrt(variance);
+
+        std::sort(calls.begin(), calls.end());
+        time_t median;
+        if (num_local % 2) {
+            median = calls[num_local / 2];
+        } else {
+            median = (calls[num_local / 2] + calls[num_local / 2 - 1]) / 2.0;
+        }
+
+        ss << "Solver " << i++
+           << ": { 'cache_clears': " << stats.smt_cache_clears
+           << ", 'num_calls': " << num_local
+           << ", 'total_time': " << solver_time.count()
+           << ", 'mean_time': " << mean.count()
+           << ", 'min_time': " << calls.front().count()
+           << ", 'median_time': " << median.count()
+           << ", 'max_time': " << calls.back().count()
+           << ", 'stddev_time': " << stddev
+           << "}\n";
+    });
+
     std::cout << "\n";
     printBanner("SMT STATS");
-    std::cout << "SMT calls: " << globals::sum(globals::smt_calls) << "\n";
-    std::cout << "SMT time (ms): " << globals::sum(globals::smt_time) << std::endl;
-    std::cout << "SMT cache clears: " << globals::sum(globals::smt_cache_clears) << std::endl;
+    std::cout << "SMT calls: " << num << "\n";
+    std::cout << "SMT time (ms): " << time.count() << std::endl;
+    std::cout << "SMT cache clears: " << cache_clears << std::endl;
+    std::cout << ss.rdbuf();
 }
 
 int main(int argc, char **argv) {

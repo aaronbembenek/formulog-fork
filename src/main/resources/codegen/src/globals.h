@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <souffle/SouffleInterface.h>
 #include <tbb/combinable.h>
 #include "smt_solver.h"
@@ -16,15 +17,13 @@ inline size_t smt_cache_size{100};
 
 inline bool smt_stats{false};
 
-inline tbb::combinable<unsigned long long> smt_calls;
+typedef std::chrono::duration<double, std::milli> time_t;
 
-inline tbb::combinable<unsigned long long> smt_time;
+struct SmtStats {
+    std::vector<time_t> smt_calls;
+    unsigned smt_cache_clears;
+};
 
-inline tbb::combinable<unsigned> smt_cache_clears;
-
-template<typename T>
-T sum(tbb::combinable<T> &stat) {
-    return stat.combine([](T x, T y) -> T { return x + y; });
-}
+inline tbb::combinable<SmtStats> smt_data;
 
 }

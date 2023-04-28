@@ -57,7 +57,7 @@ public class Dataset {
 			double delta = d.val - mean;
 			varSum += delta * delta;
 		}
-		return Math.sqrt(varSum / (data.size() - 1));
+		return Math.sqrt(varSum / data.size());
 	}
 
 	public List<Double> computeMinMedianMax() {

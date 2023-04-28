@@ -29,7 +29,6 @@ import java.io.Writer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,7 +47,6 @@ import org.jgrapht.graph.DefaultEdge;
 import org.jgrapht.traverse.TopologicalOrderIterator;
 
 import edu.harvard.seas.pl.formulog.Configuration;
-import edu.harvard.seas.pl.formulog.Main;
 import edu.harvard.seas.pl.formulog.ast.Constructor;
 import edu.harvard.seas.pl.formulog.ast.Constructors.SolverVariable;
 import edu.harvard.seas.pl.formulog.ast.Expr;
@@ -203,10 +201,6 @@ public class SmtLibShim {
 		}
 	}
 
-	public SmtStatus checkSat(int timeout) throws EvaluationException {
-		return checkSatAssuming(Collections.emptyList(), Collections.emptyList(), timeout);
-	}
-
 	private void setTimeout(int timeout) throws EvaluationException {
 		if (timeout < 0) {
 			System.err.println("Warning: negative timeout provided to solver - ignored");
@@ -218,8 +212,8 @@ public class SmtLibShim {
 		}
 	}
 
-	public SmtStatus checkSatAssuming(Collection<SolverVariable> onVars, Collection<SolverVariable> offVars,
-			int timeout) throws EvaluationException {
+	public Pair<SmtStatus, Long> checkSatAssuming(Collection<SolverVariable> onVars, Collection<SolverVariable> offVars,
+			int timeout, boolean shouldTime) throws EvaluationException {
 		setTimeout(timeout);
 		if (onVars.isEmpty() && offVars.isEmpty()) {
 			println("(check-sat)");
@@ -240,14 +234,14 @@ public class SmtLibShim {
 		String result;
 		try {
 			StopWatch clock = null;
-			if (Main.smtStats) {
+			if (shouldTime) {
 				clock = new StopWatch();
 				clock.start();
 			}
 			result = in.readLine();
-			if (Main.smtStats) {
-				Configuration.smtTime.add(clock.getTime());
-				Configuration.smtCalls.increment();
+			long elapsed = 0;
+			if (shouldTime) {
+				elapsed = clock.getNanoTime();
 			}
 			if (result == null) {
 				throw new EvaluationException("Problem with evaluating solver! Unexpected end of stream");
@@ -257,11 +251,11 @@ public class SmtLibShim {
 				log.flush();
 			}
 			if (result.equals("sat")) {
-				return SmtStatus.SATISFIABLE;
+				return new Pair<>(SmtStatus.SATISFIABLE, elapsed);
 			} else if (result.equals("unsat")) {
-				return SmtStatus.UNSATISFIABLE;
+				return new Pair<>(SmtStatus.UNSATISFIABLE, elapsed);
 			} else if (result.equals("unknown")) {
-				return SmtStatus.UNKNOWN;
+				return new Pair<>(SmtStatus.UNKNOWN, elapsed);
 			} else {
 				throw new EvaluationException("Problem with evaluating solver! Unexpected result: " + result);
 			}

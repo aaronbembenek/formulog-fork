@@ -235,20 +235,21 @@ public final class Configuration {
 	}
 
 	public static void recordSmtDeclTime(long time) {
-		smtDeclTime.addAndGet(time);
+		//smtDeclTime.addAndGet(time);
 	}
 
 	public static void recordSmtInferTime(long time) {
-		smtInferTime.addAndGet(time);
+		//smtInferTime.addAndGet(time);
 	}
 
 	public static void recordSmtSerialTime(long time) {
-		smtSerialTime.addAndGet(time);
+		//smtSerialTime.addAndGet(time);
 	}
 
 	public static void recordSmtEvalTime(SmtLibSolver solver, long encodeTime, long evalTime, SmtStatus result) {
-		smtEncodeTime.addAndGet(encodeTime);
+		//smtEncodeTime.addAndGet(encodeTime);
 		smtEvalStats.addDataPoint(evalTime);
+		/*
 		if (solver instanceof CheckSatAssumingSolver) {
 			csaEvalStats.addDataPoint(evalTime);
 		} else if (solver instanceof PushPopSolver) {
@@ -256,7 +257,9 @@ public final class Configuration {
 		} else {
 			otherSolverEvalStats.addDataPoint(evalTime);
 		}
+		*/
 		Util.lookupOrCreate(perProcessSmtEvalStats, solver, () -> new Dataset()).addDataPoint(evalTime);
+		/*
 		switch (result) {
 		case SATISFIABLE:
 			smtNumCallsSat.incrementAndGet();
@@ -268,14 +271,15 @@ public final class Configuration {
 			smtNumCallsUnsat.incrementAndGet();
 			break;
 		}
+		*/
 	}
 
 	public static void recordSmtWaitTime(long time) {
-		smtWaitTime.addAndGet(time);
+		//smtWaitTime.addAndGet(time);
 	}
 
 	public static void recordSmtDeclGlobalsTime(long time) {
-		smtDeclGlobalsTime.addAndGet(time);
+		//smtDeclGlobalsTime.addAndGet(time);
 	}
 
 	public static synchronized void printSmtDiagnostics(PrintStream out) {
@@ -327,6 +331,22 @@ public final class Configuration {
 			out.printf("[OTHER EVAL TIME] %1.1fms%n", otherSolverEvalStats.computeSum() / 1e6);
 			out.println("[OTHER EVAL TIME PER CALL (ms)] " + otherSolverEvalStats.getStatsString(1e-6));
 		}
+		int i = 0;
+		for (var e : perProcessSmtEvalStats.entrySet()) {
+			var ds = e.getValue();
+			out.print("Solver " + i + ": {");
+			out.print("'cache_clears': " + cacheClearsBySolver.getOrDefault(e.getKey(), 0) + ", ");
+			out.print("'num_calls': " + ds.size() + ", ");
+			out.print("'total_time': " + ds.computeSum() / 1e6 + ", ");
+			out.print("'mean_time': " + ds.computeMean() / 1e6 + ", ");
+			var stats = ds.computeMinMedianMax();
+			out.print("'min_time': " + stats.get(0) / 1e6 + ", ");
+			out.print("'median_time': " + stats.get(1) / 1e6 + ", ");
+			out.print("'max_time': " + stats.get(2) / 1e6 + ", ");
+			out.print("'stddev_time': " + ds.computeStdDev() / 1e6);
+			out.println("}");
+			i++;
+		}
 	}
 
 	public static void recordPushPopSolverStats(int solverId, int stackStartSize, int pops, int pushes) {
@@ -353,8 +373,11 @@ public final class Configuration {
 		}
 	}
 
-	public static void recordCsaCacheClear(int solverId) {
+	static final Map<SmtLibSolver, Integer> cacheClearsBySolver = new ConcurrentHashMap<>();
+
+	public static void recordCsaCacheClear(SmtLibSolver solver) {
 		csaCacheClears.incrementAndGet();
+		cacheClearsBySolver.compute(solver, (_k, v) -> v == null ? 1 : v + 1);
 	}
 
 	public static void recordFuncTime(FunctionSymbol func, long time) {

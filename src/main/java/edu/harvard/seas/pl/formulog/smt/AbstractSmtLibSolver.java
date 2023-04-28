@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import edu.harvard.seas.pl.formulog.Configuration;
+import edu.harvard.seas.pl.formulog.Main;
 import edu.harvard.seas.pl.formulog.ast.Constructors.SolverVariable;
 import edu.harvard.seas.pl.formulog.ast.Model;
 import edu.harvard.seas.pl.formulog.ast.Program;
@@ -153,15 +154,19 @@ public abstract class AbstractSmtLibSolver implements SmtLibSolver {
 		if (debug) {
 			long end = System.nanoTime();
 			encodeTime = end - start;
-			start = end;
 		}
 		try {
-			SmtStatus status = shim.checkSatAssuming(p.fst(), p.snd(), timeout);
+			var res = shim.checkSatAssuming(p.fst(), p.snd(), timeout, debug || Main.smtStats);
+			var status = res.fst();
+			var elapsed = res.snd();
+			if (Main.smtStats) {
+				Configuration.smtTime.add(elapsed);
+				Configuration.smtCalls.increment();
+			}
 			if (debug) {
-				long evalTime = System.nanoTime() - start;
-				Configuration.recordSmtEvalTime(this, encodeTime, evalTime, status);
+				Configuration.recordSmtEvalTime(this, encodeTime, elapsed, status);
 				if (log != null) {
-					log.println("; time: " + evalTime / 1e6 + "ms");
+					log.println("; time: " + elapsed / 1e6 + "ms");
 					log.flush();
 				}
 			}
