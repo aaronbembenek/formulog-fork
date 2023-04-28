@@ -175,15 +175,15 @@ private:
     std::unique_ptr<SmtSolver> m_second;
 };
 
-#if FLG_EAGER_EVAL
-inline TBBTopLevelSmtSolver smt_solver;
-#else
+//#if FLG_EAGER_EVAL
+//inline TBBTopLevelSmtSolver smt_solver;
+//#else
 extern inline TopLevelSmtSolver smt_solver;
 #if defined(_OPENMP)
 #pragma omp threadprivate(smt_solver)
 #endif
 TopLevelSmtSolver smt_solver;
-#endif
+//#endif
 
 }
 

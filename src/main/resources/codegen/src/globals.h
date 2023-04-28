@@ -3,6 +3,8 @@
 #include <chrono>
 #include <souffle/SouffleInterface.h>
 #include <tbb/combinable.h>
+#include <omp.h>
+#include "ConcurrentHashMap.hpp"
 #include "smt_solver.h"
 
 namespace flg::globals {
@@ -24,6 +26,19 @@ struct SmtStats {
     unsigned smt_cache_clears;
 };
 
-inline tbb::combinable<SmtStats> smt_data;
+inline struct SmtStatsHolder {
+    ConcurrentHashMap<int, SmtStats> memo;
+
+    SmtStats &local() {
+        return memo[omp_get_thread_num()];
+    }
+
+    template<typename F>
+    void combine_each(F func) {
+        for (auto &e : memo) {
+            func(e.second);
+        }
+    }
+} smt_data;
 
 }
