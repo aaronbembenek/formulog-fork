@@ -12,7 +12,10 @@
 #include <boost/program_options.hpp>
 
 #ifdef FLG_EAGER_EVAL
+#include <boost/asio.hpp>
+#include <boost/thread/thread.hpp>
 #include <oneapi/tbb/enumerable_thread_specific.h>
+#include <oneapi/tbb/task.h>
 #endif
 
 namespace flg::smt {
@@ -60,6 +63,44 @@ public:
 
     TBBTopLevelSmtSolver() = default;
 
+    void initialize(std::size_t num_threads) {
+        pool = std::make_unique<boost::asio::thread_pool>(3 * num_threads);
+    }
+
+    SmtResult check(const std::vector<term_ptr> &assertions, bool get_model, int timeout) override {
+        SmtResult res;
+        oneapi::tbb::task::suspend([=, &res](oneapi::tbb::task::suspend_point tag) {
+            boost::asio::post(*pool, [=, &res] {
+                res = solvers[boost::this_thread::get_id()].check(assertions, get_model, timeout);
+                oneapi::tbb::task::resume(tag);
+            });
+        });
+        return res;
+    }
+
+    SmtResult check(term_ptr assertion) {
+        SmtResult res;
+        oneapi::tbb::task::suspend([&](oneapi::tbb::task::suspend_point tag) {
+            boost::asio::post(*pool, [&] {
+                res = solvers[boost::this_thread::get_id()].check(assertion);
+                oneapi::tbb::task::resume(tag);
+            });
+        });
+        return res;
+    }
+
+private:
+    std::unique_ptr<boost::asio::thread_pool> pool;
+    ConcurrentHashMap<boost::thread::id, TopLevelSmtSolver, boost::hash<boost::thread::id>> solvers;
+};
+
+/*
+class TBBTopLevelSmtSolver : public SmtSolver {
+public:
+    NO_COPY_OR_ASSIGN(TBBTopLevelSmtSolver);
+
+    TBBTopLevelSmtSolver() = default;
+
     SmtResult check(const std::vector<term_ptr> &assertions, bool get_model, int timeout) override {
         return solvers.local().check(assertions, get_model, timeout);
     }
@@ -71,6 +112,7 @@ public:
 private:
     oneapi::tbb::enumerable_thread_specific<TopLevelSmtSolver> solvers;
 };
+ */
 #endif
 
 class MemoizingSmtSolver : public SmtSolver {

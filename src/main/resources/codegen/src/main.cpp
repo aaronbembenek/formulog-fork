@@ -267,6 +267,9 @@ int main(int argc, char **argv) {
         cout << "Cannot use 0 threads" << endl;
         return 1;
     }
+#ifdef FLG_EAGER_EVAL
+    smt::smt_solver.initialize(parallelism);
+#endif
 
     initialize_symbols();
     globals::smt_solver_mode = vm["smt-solver-mode"].as<smt::SmtSolverMode>();
