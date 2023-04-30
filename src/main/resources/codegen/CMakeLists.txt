@@ -48,7 +48,9 @@ target_sources(flg PRIVATE
 
 find_package(Boost 1.79 REQUIRED COMPONENTS filesystem system program_options)
 find_package(TBB REQUIRED)
-target_link_libraries(flg PRIVATE ${Boost_LIBRARIES} TBB::tbb)
+find_package(Z3 REQUIRED)
+target_link_libraries(flg PRIVATE ${Boost_LIBRARIES} TBB::tbb ${Z3_LIBRARIES})
+include_directories(${Z3_INCLUDE_DIRS})
 
 find_package(OpenMP)
 if (OpenMP_CXX_FOUND)

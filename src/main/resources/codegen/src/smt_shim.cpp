@@ -103,10 +103,10 @@ void MyTypeInferer::unify(const Type &ty1, const Type &ty2) {
     }
 }
 
-SmtLibShim::SmtLibShim(boost::process::child &&proc, boost::process::opstream &&in, boost::process::ipstream &&out)
-        : m_proc{std::move(proc)}, m_in{std::move(in)}, m_out{std::move(out)} {
-            s_shims[this] = true;
-        }
+//SmtLibShim::SmtLibShim(boost::process::child &&proc, boost::process::opstream &&in, boost::process::ipstream &&out)
+//        : m_proc{std::move(proc)}, m_in{std::move(in)}, m_out{std::move(out)} {
+//            s_shims[this] = true;
+//        }
 
 void SmtLibShim::set_timeout(int32_t timeout) {
     if (timeout < 0) {
@@ -186,49 +186,60 @@ SmtStatus SmtLibShim::check_sat_assuming(const std::vector<term_ptr> &onVars, co
                                          int timeout) {
     set_timeout(timeout);
     if (onVars.empty() && offVars.empty()) {
-        m_in << "(check-sat)\n";
+        //m_in << "(check-sat)\n";
     } else {
-        m_in << "(check-sat-assuming (";
+        m_solver.push();
+        //m_in << "(check-sat-assuming (";
         for (auto var: onVars) {
-            m_in << lookup_var(var) << " ";
+            m_in << "(assert " << lookup_var(var) << ")\n";
         }
         for (auto var: offVars) {
-            m_in << "(not " << lookup_var(var) << ") ";
+            m_in << "(assert (not " << lookup_var(var) << "))\n";
         }
-        m_in << "))\n";
+        //m_in << "))\n";
     }
     m_in.flush();
+    auto str = m_in.str();
+    m_solver.from_string(str.c_str());
 
     std::chrono::time_point<std::chrono::steady_clock> start;
     if (globals::smt_stats) {
         start = std::chrono::steady_clock::now();
     }
-    string line;
-    getline(m_out, line);
+    z3::check_result res = m_solver.check();
+    //string line;
+    //getline(m_out, line);
     if (globals::smt_stats) {
         auto end = std::chrono::steady_clock::now();
         globals::smt_data.local().smt_calls.emplace_back(end - start);
     }
+    if (!onVars.empty() || !offVars.empty()) {
+        //pop(1);
+        m_solver.pop();
+    }
+    m_in.clear();
     SmtStatus status;
-    if (line == "sat") {
+    if (res == z3::check_result::sat) {
         status = SmtStatus::sat;
-    } else if (line == "unsat") {
+    } else if (res == z3::check_result::unsat) {
         status = SmtStatus::unsat;
-    } else if (line == "unknown") {
+    } else if (res == z3::check_result::unknown) {
         status = SmtStatus::unknown;
     } else {
         cerr << "Unexpected SMT response:" << endl;
-        cerr << line << endl;
         abort();
     }
     return status;
 }
 
 Model SmtLibShim::get_model() {
+    throw std::runtime_error("getting a model not supported");
+    /*
     m_in << "(get-model)\n";
     m_in.flush();
     SmtLibParser parser(m_solver_var_lookup);
     return parser.get_model(m_out);
+     */
 }
 
 void SmtLibShim::serialize(term_ptr t) {

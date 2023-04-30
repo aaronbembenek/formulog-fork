@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <boost/process.hpp>
 #include <tbb/concurrent_unordered_map.h>
+#include <z3++.h>
 #include "Term.hpp"
 #include "Type.hpp"
 
@@ -45,7 +46,7 @@ class SmtLibShim : public SmtShim {
 public:
     NO_COPY_OR_ASSIGN(SmtLibShim);
 
-    SmtLibShim(boost::process::child &&proc, boost::process::opstream &&in, boost::process::ipstream &&out);
+    SmtLibShim() : m_solver(m_ctx) {}
 
     void make_declarations() override;
 
@@ -61,53 +62,54 @@ public:
     Model get_model() override;
 
     static void terminate_all_children() {
-        for (auto p : s_shims) {
-            if (p.second) {
-                p.first->m_in.close();
-                p.first->m_proc.terminate();
-            }
-        }
+    //    for (auto p : s_shims) {
+    //        if (p.second) {
+    //            p.first->m_in.close();
+    //            p.first->m_proc.terminate();
+    //        }
+    //    }
     }
 
-    ~SmtLibShim() override {
-        s_shims[this] = false;
-    }
+    //~SmtLibShim() override {
+    //    s_shims[this] = false;
+    //}
 
 private:
-    inline static tbb::concurrent_unordered_map<SmtLibShim *, bool> s_shims;
+    //inline static tbb::concurrent_unordered_map<SmtLibShim *, bool> s_shims;
 
     class Logger {
     public:
-        explicit Logger(boost::process::opstream &&in) : m_in{std::move(in)} {}
+        //explicit Logger(boost::process::opstream &&in) : m_in{std::move(in)} {}
 
         template<typename T>
         Logger &operator<<(const T &val) {
             m_in << val;
-            /*
-            std::cerr << val;
-            std::cerr.flush();
-            */
             return *this;
         }
 
         void flush() {
             m_in.flush();
-            /*
-            std::cerr.flush();
-            */
         }
 
         void close() {
-            m_in.close();
+            //m_in.close();
+        }
+
+        std::string str() {
+            return m_in.str();
+        }
+
+        void clear() {
+            m_in = std::stringstream();
         }
 
     private:
-        boost::process::opstream m_in;
+        std::stringstream m_in;
     };
 
-    boost::process::child m_proc;
+    z3::context m_ctx;
+    z3::solver m_solver;
     Logger m_in;
-    boost::process::ipstream m_out;
 
     std::unordered_map<term_ptr, string> m_solver_vars;
     std::unordered_map<string, term_ptr> m_solver_var_lookup;
