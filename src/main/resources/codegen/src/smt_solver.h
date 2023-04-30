@@ -64,13 +64,20 @@ public:
     TBBTopLevelSmtSolver() = default;
 
     void initialize(std::size_t num_threads) {
-        pool = std::make_unique<boost::asio::thread_pool>(3 * num_threads);
+        //pool = std::make_unique<boost::asio::thread_pool>(3 * num_threads);
     }
+
+    struct ThreadPool {
+        ThreadPool() : pool(1) {}
+
+        boost::asio::thread_pool pool;
+    };
 
     SmtResult check(const std::vector<term_ptr> &assertions, bool get_model, int timeout) override {
         SmtResult res;
-        oneapi::tbb::task::suspend([=, &res](oneapi::tbb::task::suspend_point tag) {
-            boost::asio::post(*pool, [=, &res] {
+        auto &pool = pools.local().pool;
+        oneapi::tbb::task::suspend([=, &pool, &res](oneapi::tbb::task::suspend_point tag) {
+            boost::asio::post(pool, [=, &res] {
                 res = solvers[boost::this_thread::get_id()].check(assertions, get_model, timeout);
                 oneapi::tbb::task::resume(tag);
             });
@@ -80,8 +87,9 @@ public:
 
     SmtResult check(term_ptr assertion) {
         SmtResult res;
-        oneapi::tbb::task::suspend([&](oneapi::tbb::task::suspend_point tag) {
-            boost::asio::post(*pool, [&] {
+        auto &pool = pools.local().pool;
+        oneapi::tbb::task::suspend([=, &pool, &res](oneapi::tbb::task::suspend_point tag) {
+            boost::asio::post(pool, [=, &res] {
                 res = solvers[boost::this_thread::get_id()].check(assertion);
                 oneapi::tbb::task::resume(tag);
             });
@@ -90,7 +98,8 @@ public:
     }
 
 private:
-    std::unique_ptr<boost::asio::thread_pool> pool;
+    //std::unique_ptr<boost::asio::thread_pool> pool;
+    oneapi::tbb::enumerable_thread_specific<ThreadPool> pools;
     ConcurrentHashMap<boost::thread::id, TopLevelSmtSolver, boost::hash<boost::thread::id>> solvers;
 };
 
