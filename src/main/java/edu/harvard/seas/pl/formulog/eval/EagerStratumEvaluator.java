@@ -35,6 +35,7 @@ import edu.harvard.seas.pl.formulog.unification.OverwriteSubstitution;
 import edu.harvard.seas.pl.formulog.unification.Substitution;
 import edu.harvard.seas.pl.formulog.util.AbstractFJPTask;
 import edu.harvard.seas.pl.formulog.util.CountingFJP;
+import edu.harvard.seas.pl.formulog.util.SharedLong;
 import edu.harvard.seas.pl.formulog.util.Util;
 import edu.harvard.seas.pl.formulog.validating.ast.Assignment;
 import edu.harvard.seas.pl.formulog.validating.ast.Check;
@@ -271,6 +272,7 @@ public final class EagerStratumEvaluator extends AbstractStratumEvaluator {
 		void updateBinding(SimplePredicate p, Term[] ans) {
 			if (Configuration.recordWork) {
 				Configuration.work.increment();
+				Util.lookupOrCreate(Configuration.workPerRule, rule, () -> new SharedLong()).increment();
 			}
 			Term[] args = p.getArgs();
 			BindingType[] pat = p.getBindingPattern();
@@ -316,6 +318,7 @@ public final class EagerStratumEvaluator extends AbstractStratumEvaluator {
 			}
 			if (Configuration.recordWork) {
 				Configuration.work.increment();
+				Util.lookupOrCreate(Configuration.workPerRule, rule, () -> new SharedLong()).increment();
 			}
 			return true;
 		}

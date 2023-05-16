@@ -493,6 +493,9 @@ public class SemiNaiveEvaluation implements Evaluation {
 					System.err.println("[WORK ITEMS] " + Configuration.workItems.unsafeGet());
 					System.err.println("[NEW DERIVS] " + Configuration.newDerivs.unsafeGet());
 					System.err.println("[DUP DERIVS] " + Configuration.dupDerivs.unsafeGet());
+					for (var e : Configuration.workPerRule.entrySet()) {
+						System.err.println("[PER RULE WORK] " + e.getKey() + " --> " + e.getValue().unsafeGet());
+					}
 				}
 			});
 		}
