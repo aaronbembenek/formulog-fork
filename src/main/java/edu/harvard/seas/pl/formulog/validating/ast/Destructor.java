@@ -75,7 +75,11 @@ public class Destructor implements SimpleLiteral {
 	}
 
 	public boolean destruct(Substitution subst) throws EvaluationException {
-		Constructor ctor = (Constructor) x.normalize(subst);
+		var t = x.normalize(subst);
+		if (!(t instanceof Constructor)) {
+			return false;
+		}
+		Constructor ctor = (Constructor) t;
 		if (!ctor.getSymbol().equals(symbol)) {
 			return false;
 		}

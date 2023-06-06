@@ -1,0 +1,8 @@
+rel ok
+
+rel foo(bool smt)
+
+foo(`true`).
+foo(`false`) :- foo(`_ #= 42`).
+
+ok :- !foo(`false`).

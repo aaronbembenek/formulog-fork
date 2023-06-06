@@ -77,7 +77,7 @@ public class Check implements SimpleLiteral {
 
 	@Override
 	public String toString() {
-		return lhs + (negated ? " != " : " = ") + rhs;
+		return lhs + (negated ? " != " : " == ") + rhs;
 	}
 
 	@Override
