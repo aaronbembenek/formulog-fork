@@ -150,6 +150,7 @@ public final class Configuration {
 	public static final boolean debugStratification = propIsSet("debugStratification");
 	public static final String debugStratificationOutDir = getStringProp("debugStratificationOutDir",
 			"stratification_graphs");
+	public static final boolean squashStrata = propIsSet("squashStrata");
 
 	public static final boolean testCodegen = propIsSet("testCodegen");
 	public static final boolean keepCodegenTestDirs = propIsSet("keepCodegenTestDirs");

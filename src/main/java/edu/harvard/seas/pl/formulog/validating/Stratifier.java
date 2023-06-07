@@ -39,6 +39,7 @@ import org.jgrapht.alg.connectivity.KosarajuStrongConnectivityInspector;
 import org.jgrapht.alg.interfaces.StrongConnectivityAlgorithm;
 import org.jgrapht.graph.DefaultDirectedGraph;
 import org.jgrapht.graph.DefaultEdge;
+import org.jgrapht.graph.MaskSubgraph;
 import org.jgrapht.traverse.TopologicalOrderIterator;
 
 import edu.harvard.seas.pl.formulog.Configuration;
@@ -102,8 +103,9 @@ public class Stratifier {
 		List<Stratum> strata = new ArrayList<>();
 		int rank = 0;
 		InvalidProgramException exn = null;
+		Set<RelationSymbol> curRels = new HashSet<>();
+		boolean squashedRecursiveNegOrAgg = false;
 		while (topo.hasNext()) {
-			boolean hasRecursiveNegationOrAggregation = false;
 			Graph<RelationSymbol, DependencyTypeWrapper> component = topo.next();
 			Set<RelationSymbol> edbs = component.vertexSet().stream().filter(r -> r.isEdbSymbol())
 					.collect(Collectors.toSet());
@@ -113,6 +115,7 @@ public class Stratifier {
 				}
 				continue;
 			}
+			boolean hasRecursiveNegationOrAggregation = false;
 			for (DependencyTypeWrapper dw : component.edgeSet()) {
 				DependencyType d = dw.get();
 				if (d.equals(DependencyType.NEG_OR_AGG_IN_FUN) && exn == null) {
@@ -122,16 +125,41 @@ public class Stratifier {
 				}
 				hasRecursiveNegationOrAggregation |= d.equals(DependencyType.NEG_OR_AGG_IN_REL);
 			}
-			strata.add(new Stratum(rank, component.vertexSet(), hasRecursiveNegationOrAggregation));
-			if (Configuration.debugStratification) {
-				toDot(rank, component);
+			if (Configuration.squashStrata && canBeSquashed(g, curRels, component.vertexSet())) {
+				curRels.addAll(component.vertexSet());
+				squashedRecursiveNegOrAgg |= hasRecursiveNegationOrAggregation;
+			} else {
+				strata.add(new Stratum(rank, curRels, squashedRecursiveNegOrAgg));
+				if (Configuration.debugStratification) {
+					var curRelsCopy = new HashSet<>(curRels);
+					var masked = new MaskSubgraph<RelationSymbol, DependencyTypeWrapper>(g,
+							v -> !curRelsCopy.contains(v), _e -> false);
+					toDot(rank, masked);
+				}
+				curRels = new HashSet<>(component.vertexSet());
+				squashedRecursiveNegOrAgg = hasRecursiveNegationOrAggregation;
+				rank++;
 			}
-			rank++;
+		}
+		if (!curRels.isEmpty()) {
+			strata.add(new Stratum(rank, curRels, squashedRecursiveNegOrAgg));
 		}
 		if (exn != null) {
 			throw exn;
 		}
 		return strata;
+	}
+
+	private boolean canBeSquashed(Graph<RelationSymbol, DependencyTypeWrapper> g, Set<RelationSymbol> existingRels,
+			Set<RelationSymbol> newRels) {
+		for (var newRel : newRels) {
+			for (var edge : g.incomingEdgesOf(newRel)) {
+				if (edge.get() != DependencyType.POSITIVE && existingRels.contains(g.getEdgeSource(edge))) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	private static void toDot(int stratumNumber, Graph<RelationSymbol, DependencyTypeWrapper> component) {
