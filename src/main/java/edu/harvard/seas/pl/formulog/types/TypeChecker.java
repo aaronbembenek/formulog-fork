@@ -1,5 +1,21 @@
 package edu.harvard.seas.pl.formulog.types;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+
 /*-
  * #%L
  * Formulog
@@ -21,38 +37,69 @@ package edu.harvard.seas.pl.formulog.types;
  */
 
 import edu.harvard.seas.pl.formulog.Main;
-import edu.harvard.seas.pl.formulog.ast.*;
+import edu.harvard.seas.pl.formulog.ast.BasicRule;
+import edu.harvard.seas.pl.formulog.ast.ComplexLiteral;
 import edu.harvard.seas.pl.formulog.ast.ComplexLiterals.ComplexLiteralExnVisitor;
 import edu.harvard.seas.pl.formulog.ast.ComplexLiterals.ComplexLiteralVisitor;
+import edu.harvard.seas.pl.formulog.ast.Constructor;
+import edu.harvard.seas.pl.formulog.ast.Constructors;
+import edu.harvard.seas.pl.formulog.ast.Expr;
 import edu.harvard.seas.pl.formulog.ast.Exprs.ExprVisitor;
 import edu.harvard.seas.pl.formulog.ast.Exprs.ExprVisitorExn;
+import edu.harvard.seas.pl.formulog.ast.Fold;
+import edu.harvard.seas.pl.formulog.ast.FunctionCallFactory;
 import edu.harvard.seas.pl.formulog.ast.FunctionCallFactory.FunctionCall;
+import edu.harvard.seas.pl.formulog.ast.I32;
+import edu.harvard.seas.pl.formulog.ast.LetFunExpr;
+import edu.harvard.seas.pl.formulog.ast.MatchClause;
+import edu.harvard.seas.pl.formulog.ast.MatchExpr;
+import edu.harvard.seas.pl.formulog.ast.NestedFunctionDef;
+import edu.harvard.seas.pl.formulog.ast.Primitive;
+import edu.harvard.seas.pl.formulog.ast.Program;
+import edu.harvard.seas.pl.formulog.ast.Rule;
+import edu.harvard.seas.pl.formulog.ast.Term;
+import edu.harvard.seas.pl.formulog.ast.Terms;
 import edu.harvard.seas.pl.formulog.ast.Terms.TermVisitor;
 import edu.harvard.seas.pl.formulog.ast.Terms.TermVisitorExn;
+import edu.harvard.seas.pl.formulog.ast.UnificationPredicate;
+import edu.harvard.seas.pl.formulog.ast.UserPredicate;
+import edu.harvard.seas.pl.formulog.ast.Var;
 import edu.harvard.seas.pl.formulog.functions.FunctionDef;
 import edu.harvard.seas.pl.formulog.functions.FunctionDefManager;
 import edu.harvard.seas.pl.formulog.functions.UserFunctionDef;
-import edu.harvard.seas.pl.formulog.symbols.*;
+import edu.harvard.seas.pl.formulog.symbols.BuiltInConstructorSymbol;
+import edu.harvard.seas.pl.formulog.symbols.BuiltInTypeSymbol;
+import edu.harvard.seas.pl.formulog.symbols.ConstructorSymbol;
+import edu.harvard.seas.pl.formulog.symbols.FunctionSymbol;
+import edu.harvard.seas.pl.formulog.symbols.RelationSymbol;
+import edu.harvard.seas.pl.formulog.symbols.SymbolManager;
+import edu.harvard.seas.pl.formulog.symbols.TypeSymbol;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.Param;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.ParameterizedConstructorSymbol;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.ParameterizedSymbol;
-import edu.harvard.seas.pl.formulog.types.Types.*;
+import edu.harvard.seas.pl.formulog.types.Types.AlgebraicDataType;
+import edu.harvard.seas.pl.formulog.types.Types.OpaqueType;
+import edu.harvard.seas.pl.formulog.types.Types.Type;
+import edu.harvard.seas.pl.formulog.types.Types.TypeIndex;
+import edu.harvard.seas.pl.formulog.types.Types.TypeVar;
+import edu.harvard.seas.pl.formulog.types.Types.TypeVisitor;
 import edu.harvard.seas.pl.formulog.unification.SimpleSubstitution;
 import edu.harvard.seas.pl.formulog.unification.Substitution;
 import edu.harvard.seas.pl.formulog.util.Triple;
 import edu.harvard.seas.pl.formulog.util.Util;
-
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 public class TypeChecker {
 
 	private final Program<UserPredicate, BasicRule> prog;
 	private WellTypedProgram outputProgram;
 
-	public TypeChecker(Program<UserPredicate, BasicRule> prog2) {
-		this.prog = prog2;
+	public TypeChecker(Program<UserPredicate, BasicRule> prog) {
+		this.prog = prog;
+	}
+
+	public synchronized BasicRule typeCheck(Rule<UserPredicate, ComplexLiteral> rule) throws TypeException {
+		TypeCheckerContext ctx = new TypeCheckerContext();
+		return ctx.typeCheckRule(rule);
 	}
 
 	public synchronized WellTypedProgram typeCheck() throws TypeException {
@@ -194,6 +241,7 @@ public class TypeChecker {
 					Set<BasicRule> s = new HashSet<>();
 					for (BasicRule r : prog.getRules(sym)) {
 						TypeCheckerContext ctx = new TypeCheckerContext();
+						ctx.setRemoveFormulaDelimiters(false);
 						s.add(ctx.typeCheckRule(r));
 					}
 					return s;
@@ -237,6 +285,11 @@ public class TypeChecker {
 		private final Deque<Triple<Term, Type, Type>> formulaConstraints = new ArrayDeque<>();
 		private final Map<TypeVar, Type> typeVars = new HashMap<>();
 		private String error;
+		private boolean removeFormulaDelimiters = true;
+
+		public void setRemoveFormulaDelimiters(boolean val) {
+			removeFormulaDelimiters = val;
+		}
 
 		private Term rewriteTerm(Term t, Substitution m) throws TypeException {
 			return t.accept(termRewriter, m);
@@ -708,8 +761,8 @@ public class TypeChecker {
 			@Override
 			public Term visit(Constructor c, Substitution subst) throws TypeException {
 				ConstructorSymbol sym = c.getSymbol();
-				if (sym.equals(BuiltInConstructorSymbol.ENTER_FORMULA)
-						|| sym.equals(BuiltInConstructorSymbol.EXIT_FORMULA)) {
+				if (removeFormulaDelimiters && (sym.equals(BuiltInConstructorSymbol.ENTER_FORMULA)
+						|| sym.equals(BuiltInConstructorSymbol.EXIT_FORMULA))) {
 					return c.getArgs()[0].accept(this, subst);
 				}
 				if (sym instanceof ParameterizedConstructorSymbol) {

@@ -126,7 +126,7 @@ public class RuleTranslator {
 		private List<SRule> translate(BasicRule br) throws CodeGenException {
 			SimpleRule sr;
 			try {
-				ValidRule vr = ValidRule.make(br, (_lit, _vars) -> 1);
+				ValidRule vr = ValidRule.make(br, (_lit, _vars) -> 1, prog);
 				sr = SimpleRule.make(vr, prog.getFunctionCallFactory());
 				varCount = sr.countVariables();
 			} catch (InvalidProgramException e) {

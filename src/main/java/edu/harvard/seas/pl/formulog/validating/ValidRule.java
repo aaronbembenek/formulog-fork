@@ -29,23 +29,26 @@ import java.util.Set;
 import java.util.function.BiFunction;
 
 import edu.harvard.seas.pl.formulog.ast.AbstractRule;
+import edu.harvard.seas.pl.formulog.ast.BasicRule;
 import edu.harvard.seas.pl.formulog.ast.ComplexLiteral;
+import edu.harvard.seas.pl.formulog.ast.Program;
 import edu.harvard.seas.pl.formulog.ast.Rule;
 import edu.harvard.seas.pl.formulog.ast.UserPredicate;
 import edu.harvard.seas.pl.formulog.ast.Var;
+import edu.harvard.seas.pl.formulog.types.TypeChecker;
+import edu.harvard.seas.pl.formulog.types.TypeException;
 import edu.harvard.seas.pl.formulog.unification.Unification;
 import edu.harvard.seas.pl.formulog.util.Util;
 
 public class ValidRule extends AbstractRule<UserPredicate, ComplexLiteral> {
 
 	public static ValidRule make(Rule<UserPredicate, ComplexLiteral> rule,
-			BiFunction<ComplexLiteral, Set<Var>, Integer> score) throws InvalidProgramException {
+			BiFunction<ComplexLiteral, Set<Var>, Integer> score, Program<UserPredicate, BasicRule> prog) throws InvalidProgramException {
 		try {
 			List<ComplexLiteral> body = Util.iterableToList(rule);
 			Set<Var> vars = new HashSet<>();
-			// Reordering is currently unsound... also need to type check.
 			order(body, score, vars, rule.countVariables());
-			// Set<Var> vars = checkBody(rule);
+			checkBody(rule);
 			UserPredicate head = rule.getHead();
 			if (!head.getSymbol().isIdbSymbol()) {
 				throw new InvalidProgramException("Cannot create a rule for non-IDB symbol " + head.getSymbol());
@@ -59,8 +62,14 @@ public class ValidRule extends AbstractRule<UserPredicate, ComplexLiteral> {
 				}
 				throw new InvalidProgramException(msg);
 			}
-			return new ValidRule(head, body);
-		} catch (InvalidProgramException e) {
+			TypeChecker tc = new TypeChecker(prog);
+			var newRule = tc.typeCheck(BasicRule.make(head, body));
+			List<ComplexLiteral> newBody = new ArrayList<>();
+			for (ComplexLiteral l : newRule) {
+				newBody.add(l);
+			}
+			return new ValidRule(newRule.getHead(), newBody); 
+		} catch (InvalidProgramException | TypeException e) {
 			throw new InvalidProgramException(e.getMessage() + "\n" + rule);
 		}
 	}
@@ -93,7 +102,7 @@ public class ValidRule extends AbstractRule<UserPredicate, ComplexLiteral> {
 		atoms.addAll(newList);
 	}
 
-	private static Set<Var> checkBody(Rule<UserPredicate, ComplexLiteral> rule) throws InvalidProgramException {
+	private static void checkBody(Rule<UserPredicate, ComplexLiteral> rule) throws InvalidProgramException {
 		Set<Var> boundVars = new HashSet<>();
 		Map<Var, Integer> varCounts = rule.countVariables();
 		for (ComplexLiteral lit : rule) {
@@ -103,7 +112,6 @@ public class ValidRule extends AbstractRule<UserPredicate, ComplexLiteral> {
 			}
 			boundVars.addAll(lit.varSet());
 		}
-		return boundVars;
 	}
 
 	private ValidRule(UserPredicate head, List<ComplexLiteral> body) {
