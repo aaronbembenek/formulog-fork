@@ -1,0 +1,32 @@
+(* This currently crashes if using `-Doptimize=5` setting *)
+(* Fix: change solver variables to not have separate ID generators *)
+(* Another fix: when reordering, do not move non-ground function calls 
+
+  rel bar(i32)
+  rel foo(i32 smt, i32)
+
+  foo(`0`, 0) :- 
+    bar(X),
+    foo(`X`, X + 42). <-- careful when reordering
+
+  Want this:
+
+  foo(`0`, 0) :- 
+    foo(`X`, Y),
+    bar(X),
+    Y = X + 42.
+
+*)
+
+rel foo(bool smt)
+rel bar(i32)
+rel ok
+
+bar(13).
+foo(`#x[i32] #= 41`).
+foo(`true`) :-
+  bar(X),
+  X + 1 = 42,
+  foo(`X #= 41`).
+
+ok :- foo(`true`).
