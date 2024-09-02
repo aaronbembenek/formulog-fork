@@ -84,6 +84,7 @@ import edu.harvard.seas.pl.formulog.symbols.parameterized.Param;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.ParamKind;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.ParameterizedConstructorSymbol;
 import edu.harvard.seas.pl.formulog.symbols.parameterized.ParameterizedSymbol;
+import edu.harvard.seas.pl.formulog.types.Types;
 import edu.harvard.seas.pl.formulog.types.Types.AlgebraicDataType;
 import edu.harvard.seas.pl.formulog.types.Types.Type;
 import edu.harvard.seas.pl.formulog.util.Pair;
@@ -257,11 +258,11 @@ class TermExtractor {
             return id.asVar();
           }
           if (name.charAt(0) == '#' && args.length == 0) {
-            if (params.size() != 1) {
+            if (params.size() > 1) {
               throw new IllegalArgumentException(
-                  "Expected a single parameter to solver variable: " + name);
+                  "Expected at most one parameter to solver variable: " + name);
             }
-            Type ty = params.get(0).getType();
+            Type ty = params.isEmpty() ? Types.TypeVar.fresh() : params.get(0).getType();
             return extractSolverSymbol(StringTerm.make(name.substring(1)), ty);
           }
           Symbol sym = id != null ? id.asFunctionSymbol() : pc.symbolManager().lookupSymbol(name);
